@@ -77,37 +77,44 @@ static int get_i2c_register(int fd,
         perror("Unable to send data");
         return 1;
     }
+    
     *val = inbuf;
 
     return 0;
 }
 
+static int set_i2c_register(int fd,
+                            unsigned char addr,
+                            unsigned char reg,
+                            unsigned char val) {
+    struct i2c_rdwr_ioctl_data packets;
+    struct i2c_msg messages[2];
+    unsigned char outbuf[2];
+    outbuf[0] = reg;
+    outbuf[1] = val;
+
+    /*
+     * In order to read a register, we first do a "dummy write" by writing
+     * 0 bytes to the register we want to read from.  This is similar to
+     * the packet in set_i2c_register, except it's 1 byte rather than 2.
+     */
+    
+    messages[0].addr  = addr;
+    messages[0].flags = 0;
+    messages[0].len   = 2;
+    messages[0].buf   = outbuf;
 
 
-static inline __s32 i2c_smbus_access(int file, char read_write, __u8 command,
-                                     int size, union i2c_smbus_data *data)
-{
-	struct i2c_smbus_ioctl_data args;
+    /* Send the request to the kernel and get the result back */
+    packets.msgs      = messages;
+    packets.nmsgs     = 1;
+    if(ioctl(fd, I2C_RDWR, &packets) < 0) {
+        perror("Unable to send data");
+        return 1;
+    }
 
-	args.read_write = read_write;
-	args.command = command;
-	args.size = size;
-	args.data = data;
-	return ioctl(file,I2C_SMBUS,&args);
+    return 0;
 }
-
-
-static inline __s32 i2c_smbus_read_byte_data(int file, __u8 command)
-{
-	union i2c_smbus_data data;
-	if (i2c_smbus_access(file,I2C_SMBUS_READ,command,
-	                     I2C_SMBUS_BYTE_DATA,&data))
-		return -1;
-	else
-		return 0x0FF & data.byte;
-}
-
-
 
 
 int main(int argc, char **argv)
@@ -115,12 +122,12 @@ int main(int argc, char **argv)
   /*
    *  Initialize mems driver interface
    */
-  	uint8_t data;
-    uint8_t addr = ACCEL_ADDR;
-    uint8_t reg = 0xF;
-    uint8_t tLow, tHigh;
+  	
+   uint8_t addr = ACCEL_ADDR;
+   uint8_t tLow, tHigh;
+   uint8_t reg;
 
-   lis2dh12_ctx_t dev_ctx;
+  lis2dh12_ctx_t dev_ctx;
   int fd;
 
   dev_ctx.write_reg = platform_write;
@@ -137,26 +144,16 @@ int main(int argc, char **argv)
   }
 
   dev_ctx.handle = (void*) fd;
-
-
-  data = i2c_smbus_read_byte_data(fd, reg);
-
-	printf("%s: device 0x%02x at address 0x%02x: 0x%02x\n",
-			DEV_I2C, addr, reg, data);   
-   
-  //int32_t res;
-  //res = i2c_smbus_read_byte_data(fd, 0x0F);
-  
-  //printf ("i2c_smbus_read_byte returns %02X\n", res);
-   
+ 
   lis2dh12_device_id_get(&dev_ctx, &whoamI);
-  printf("device id: %d\n", whoamI);
+
+  printf("device id: %02X\n", whoamI);
   if (whoamI != LIS2DH12_ID)
   {
     printf ("Device not found\n");
     
   } else {
-    printf ("Found the LIS2DH12 device\n");
+    printf ("Identifed LIS2DH12...\n");
   }
   
 
@@ -183,8 +180,13 @@ int main(int argc, char **argv)
   /*
    * Set device in continuous mode with 12 bit resol.
    */
+  //lis2dh12_operating_mode_set(&dev_ctx, LIS2DH12_LP_8bit);
   lis2dh12_operating_mode_set(&dev_ctx, LIS2DH12_HR_12bit);
 
+  get_i2c_register(fd, addr, 0x1F, &reg);
+  printf ("temperature register: %02X\n", reg);
+  
+  
   /*
    * Read samples in polling mode (no int)
    */
@@ -214,9 +216,7 @@ int main(int argc, char **argv)
     }
 
     lis2dh12_temp_data_ready_get(&dev_ctx, &reg.byte);
-    if (reg.byte) 
-      printf ("temp data is ready\n");
-//    if (reg.byte)
+    if (reg.byte)
     {
       /* Read temperature data */
       memset(data_raw_temperature.u8bit, 0x00, sizeof(int16_t));
@@ -256,15 +256,21 @@ static int32_t platform_write(void *handle, uint8_t reg, uint8_t *bufp,
                               uint16_t len)
 {
   int fd = (int) handle;
-  printf ("Platform_write reg=%02X cnt=%d [ ", reg, len);
+  int rval = 0;
+
+  printf ("WR [%02X]: ", reg);
   for (int i = 0; i < len ; i++) {
     printf("%02X ", bufp[i]);
   }
-  printf("]\n");
+  printf("\n");
+
+
+  for (int i = 0; i < len; i++) 
+  {
+    rval = set_i2c_register(fd, ACCEL_ADDR, reg+i, bufp[i]);
+  }
   
-  //ioctl(fd, I2C_SLAVE, reg);              
-  //ioctl(fd, I2C_SLAVE, reg);              
-  return write (fd, bufp, len);    
+  return rval;    
 
 }
 
@@ -285,35 +291,15 @@ static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp,
   int rval = 0;
   /* Read multiple command */
  
- #if 0 
-  ioctl(fd, I2C_SLAVE, reg | 0x80);              
-  rval = read(fd, bufp, len);
-  printf ("platform_read reg=%02X, (%d) [ ", reg, len);
-  for (int i = 0; i < len; i++ ) 
-  {
-    printf("%02X ", bufp[i]);
-  }
-  printf ("] (%d)\n", rval);
-  
-  for (int j = 0; j < len; j++ ) 
-  {
-    bufp[j]  = i2c_smbus_read_byte_data(fd, reg+j);
-  }
-  
-  printf ("i2c_smbus_read: reg=%02X, (%d) [ ", reg, len);
-  for (int i = 0; i < len; i++ ) 
-  {
-    printf("%02X ", bufp[i]);
-  }
-  printf ("] (%d)\n", rval);
-
-  #else
+  printf ("RD [0x%02X]: ", reg);
   for (int i = 0; i < len; i++) 
   {
-    rval = get_i2c_register(fd, ACCEL_ADDR, reg+i, bufp+i);
+    rval = get_i2c_register(fd, ACCEL_ADDR | 0x80, reg+i, bufp+i);
+    printf("%02X ", bufp[i]);
   }
+  printf ("\n");
   
-  #endif
+    
   return rval;    
   
   
@@ -343,9 +329,5 @@ static int platform_init(int devId)
     return (-1);
     
   }
-  if (ioctl(fd, I2C_SLAVE, devId) < 0)
-    {
-      printf("unable to ioctl I2C_SLAVE\n");
-    }
   return fd;
 }
