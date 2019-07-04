@@ -203,14 +203,19 @@ static void initAccelerometer( lis2dh12_ctx_t dev_ctx ) {
    */
   //lis2dh12_operating_mode_set(&dev_ctx, LIS2DH12_LP_8bit);
   lis2dh12_operating_mode_set(&dev_ctx, LIS2DH12_HR_12bit);
+  
+  
+  //lis2dh12_data_format_set(&dev_ctx, LIS2DH12_MSB_AT_LOW_ADD);
+  lis2dh12_data_format_set(&dev_ctx, LIS2DH12_LSB_AT_LOW_ADD);
+
 }
 
 static void readTemperature( lis2dh12_ctx_t dev_ctx ) {
     lis2dh12_reg_t reg;
     axis1bit16_t data_raw_temperature;
     float temperature_degC;
-    
-    
+    float temperature_degF;
+        
     lis2dh12_temp_data_ready_get(&dev_ctx, &reg.byte);
     if (reg.byte)
     {
@@ -219,11 +224,18 @@ static void readTemperature( lis2dh12_ctx_t dev_ctx ) {
       lis2dh12_temperature_raw_get(&dev_ctx, data_raw_temperature.u8bit);
       temperature_degC =
           lis2dh12_from_lsb_hr_to_celsius(data_raw_temperature.i16bit);
+      
+      float scale = 2.5f/3.3f;   // The raspberry pi is operating at 3.3V.  Device calibrated to 2.5V
+      
+      temperature_degC *=scale;
+      
+      temperature_degF = (temperature_degC *9 / 5 ) + 32.0;
 
       sprintf((char *)tx_buffer,
-              "Temperature [degC]:%6.2f\n",
-              temperature_degC);
+              "Temperature:     %6.2f C     %6.2f F\n",
+              temperature_degC , temperature_degF);
       tx_com(tx_buffer, strlen((char const *)tx_buffer));
+      
     }
   
 }
