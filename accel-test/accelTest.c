@@ -50,6 +50,7 @@ static int set_i2c_register (int fd,
 static void initAccelerometer( lis2dh12_ctx_t dev_ctx );
 static void readTemperature( lis2dh12_ctx_t dev_ctx ) ;
 static void readAccelerometer(lis2dh12_ctx_t dev_ctx ) ;
+static void readTap (lis2dh12_ctx_t dev_ctx );
 
 static void usage(void) {
   printf("d </dev/i2c-0 path to the i2c device\n");
@@ -156,6 +157,10 @@ int main(int argc, char **argv)
     if (temperatureMode) {
       readTemperature(dev_ctx);
     }
+    
+    if (doubleTap) {
+       readTap(dev_ctx);
+    }
     sleep(1);
   }
   return (0);
@@ -208,6 +213,23 @@ static void initAccelerometer( lis2dh12_ctx_t dev_ctx ) {
   //lis2dh12_data_format_set(&dev_ctx, LIS2DH12_MSB_AT_LOW_ADD);
   lis2dh12_data_format_set(&dev_ctx, LIS2DH12_LSB_AT_LOW_ADD);
 
+
+  lis2dh12_click_cfg_t tapcfg;
+  tapcfg.xs = 1;
+  tapcfg.xd = 1;
+  tapcfg.ys= 1;
+  tapcfg.yd = 1;
+  tapcfg.zs = 1;
+  tapcfg.zd = 1;
+  
+  lis2dh12_tap_conf_set(&dev_ctx, &tapcfg);
+  
+  lis2dh12_tap_notification_mode_set(&dev_ctx, LIS2DH12_TAP_LATCHED);
+  
+  lis2dh12_quiet_dur_set(&dev_ctx, 1); 
+  lis2dh12_double_tap_timeout_set(&dev_ctx, 10);
+  lis2dh12_tap_threshold_set(&dev_ctx, 10);
+  lis2dh12_shock_dur_set(&dev_ctx, 2);
 }
 
 static void readTemperature( lis2dh12_ctx_t dev_ctx ) {
@@ -267,6 +289,25 @@ static void readAccelerometer ( lis2dh12_ctx_t dev_ctx ) {
     }
 
   }
+  
+  
+static void readTap (lis2dh12_ctx_t dev_ctx ) {
+  lis2dh12_click_src_t src;
+  
+  lis2dh12_tap_source_get(&dev_ctx, &src);
+  
+  printf ("tap: %s %s %s %s %s %s %s\n",
+    src.ia ? "IA" : "",
+    src.dclick ? "DCLK" : "",
+    src.sclick ? "SCLK" : "" ,
+    src.sign ? "SIGN" : "",
+    src.x ? "X" : "",
+    src.y ? "Y" : "",
+    src.z ? "Z" : ""
+    
+    );
+  
+}
 
 
 
