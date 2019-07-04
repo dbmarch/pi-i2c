@@ -226,10 +226,11 @@ static void initAccelerometer( lis2dh12_ctx_t dev_ctx ) {
   
   lis2dh12_tap_notification_mode_set(&dev_ctx, LIS2DH12_TAP_LATCHED);
   
-  lis2dh12_quiet_dur_set(&dev_ctx, 1); 
-  lis2dh12_double_tap_timeout_set(&dev_ctx, 10);
-  lis2dh12_tap_threshold_set(&dev_ctx, 10);
-  lis2dh12_shock_dur_set(&dev_ctx, 2);
+  lis2dh12_tap_threshold_set(&dev_ctx, 5);
+  lis2dh12_shock_dur_set(&dev_ctx, 5);
+  lis2dh12_quiet_dur_set(&dev_ctx, 5); 
+  lis2dh12_double_tap_timeout_set(&dev_ctx, 5);
+
 }
 
 static void readTemperature( lis2dh12_ctx_t dev_ctx ) {
