@@ -30,6 +30,8 @@ static bool temperatureMode = false;
 static bool accelMode = false;
 static bool doubleTap = false;
 static uint8_t devAddr = ACCEL_ADDR;
+static bool lowPower = false;
+static bool pendingRegisterDump = false;
 
 /* Private functions ---------------------------------------------------------*/
 static int32_t platform_write(void *handle, uint8_t reg, uint8_t *bufp,
@@ -51,6 +53,7 @@ static void initAccelerometer( lis2dh12_ctx_t dev_ctx );
 static void readTemperature( lis2dh12_ctx_t dev_ctx ) ;
 static void readAccelerometer(lis2dh12_ctx_t dev_ctx ) ;
 static void readTap (lis2dh12_ctx_t dev_ctx );
+static void dumpAllRegisters (lis2dh12_ctx_t dev_ctx );
 
 static void usage(void) {
   printf("d </dev/i2c-0 path to the i2c device\n");
@@ -59,6 +62,8 @@ static void usage(void) {
   printf("t             temp Mode\n");
   printf("x             accel Mode\n");
   printf("p             doubleTap mode\n");
+  printf("l             low power mode\n");
+  printf("r             dump all registers\n");
   printf("h             this menu\n");
   exit(0);
 }
@@ -80,7 +85,7 @@ int main(int argc, char **argv)
 
   opterr = 0;
 
-  while ((opt = getopt (argc, argv, "d:a:vtxph")) != -1)
+  while ((opt = getopt (argc, argv, "d:a:vtxphr")) != -1)
     switch (opt)
       {
         case 'd':
@@ -118,9 +123,16 @@ int main(int argc, char **argv)
           printf("DoubleTap Mode \n");
           doubleTap = true;
           break;
+        
+        case 'l':
+          lowPower = true;
+          break;
           
         case 'h':
           usage();
+          break;
+        case 'r':
+          pendingRegisterDump = true;
           break;
           
         default:
@@ -128,15 +140,22 @@ int main(int argc, char **argv)
           break;
       }
     
-  dev_ctx.write_reg = platform_write;
-  dev_ctx.read_reg = platform_read;
   fd = platform_init(devPath);
   if (fd < 0)
   {
     printf("unable to open I2C - exit\n");
     return (-1);
   }
+  
+  dev_ctx.write_reg = platform_write;
+  dev_ctx.read_reg = platform_read;
   dev_ctx.handle = (void*) fd;
+  
+  
+  if (pendingRegisterDump) {
+    dumpAllRegisters(dev_ctx);
+  }
+  
   initAccelerometer(dev_ctx);
 
   
@@ -189,8 +208,10 @@ static void initAccelerometer( lis2dh12_ctx_t dev_ctx ) {
   /*
    * Set Output Data Rate to 1Hz
    */
-  //lis2dh12_data_rate_set(&dev_ctx, LIS2DH12_ODR_1Hz);
-  lis2dh12_data_rate_set(&dev_ctx, LIS2DH12_ODR_5kHz376_LP_1kHz344_NM_HP);
+  if (lowPower)
+     lis2dh12_data_rate_set(&dev_ctx, LIS2DH12_ODR_1Hz);
+  else
+     lis2dh12_data_rate_set(&dev_ctx, LIS2DH12_ODR_400Hz);
   
 
   /*
@@ -206,32 +227,46 @@ static void initAccelerometer( lis2dh12_ctx_t dev_ctx ) {
   /*
    * Set device in continuous mode with 12 bit resol.
    */
-  //lis2dh12_operating_mode_set(&dev_ctx, LIS2DH12_LP_8bit);
-  lis2dh12_operating_mode_set(&dev_ctx, LIS2DH12_HR_12bit);
+   
+   if(lowPower) 
+      lis2dh12_operating_mode_set(&dev_ctx, LIS2DH12_LP_8bit);
+   else
+      lis2dh12_operating_mode_set(&dev_ctx, LIS2DH12_HR_12bit);
   
-  
-  //lis2dh12_data_format_set(&dev_ctx, LIS2DH12_MSB_AT_LOW_ADD);
   lis2dh12_data_format_set(&dev_ctx, LIS2DH12_LSB_AT_LOW_ADD);
 
+  if (doubleTap) {
+    lis2dh12_click_cfg_t tapcfg;
+    tapcfg.xs = 1;
+    tapcfg.xd = 1;
+    tapcfg.ys = 1;
+    tapcfg.yd = 1;
+    tapcfg.zs = 1;
+    tapcfg.zd = 1;
+    
+    lis2dh12_tap_conf_set(&dev_ctx, &tapcfg);
+    
+    lis2dh12_tap_notification_mode_set(&dev_ctx, LIS2DH12_TAP_LATCHED);
+    lis2dh12_act_timeout_set(&dev_ctx, 0x0f);
 
-  lis2dh12_click_cfg_t tapcfg;
-  tapcfg.xs = 1;
-  tapcfg.xd = 1;
-  tapcfg.ys= 1;
-  tapcfg.yd = 1;
-  tapcfg.zs = 1;
-  tapcfg.zd = 1;
-  
-  lis2dh12_tap_conf_set(&dev_ctx, &tapcfg);
-  
-  lis2dh12_tap_notification_mode_set(&dev_ctx, LIS2DH12_TAP_LATCHED);
-  
-  lis2dh12_tap_threshold_set(&dev_ctx, 5);
-  lis2dh12_shock_dur_set(&dev_ctx, 5);
-  lis2dh12_quiet_dur_set(&dev_ctx, 5); 
-  lis2dh12_double_tap_timeout_set(&dev_ctx, 5);
-
+    lis2dh12_tap_threshold_set(&dev_ctx, 0x05);
+    lis2dh12_shock_dur_set(&dev_ctx, 5);
+    lis2dh12_quiet_dur_set(&dev_ctx, 0x24); 
+    lis2dh12_double_tap_timeout_set(&dev_ctx, 0x7f);
+  }
 }
+
+static void dumpAllRegisters (lis2dh12_ctx_t dev_ctx ) {
+  int fd = (int) dev_ctx.handle;  
+  uint8_t val;
+  
+  for (int i = 0x1E; i <= 0x3F; i++) {
+    get_i2c_register(fd, devAddr, i, &val);    
+    printf("[0x%02X] = %02X\n", i, val);
+  }
+  exit(0);
+}
+
 
 static void readTemperature( lis2dh12_ctx_t dev_ctx ) {
     lis2dh12_reg_t reg;
@@ -305,7 +340,6 @@ static void readTap (lis2dh12_ctx_t dev_ctx ) {
     src.x ? "X" : "",
     src.y ? "Y" : "",
     src.z ? "Z" : ""
-    
     );
   
 }
