@@ -1,5 +1,5 @@
 TARGET = accelTest
-LIBS = -lm
+LIBS = -lm  -lstdc++
 CC = gcc
 CFLAGS = -g -Wall
 
@@ -9,15 +9,16 @@ default: $(TARGET)
 all: default
 
 OBJECTS = $(patsubst %.c, %.o, $(wildcard *.c))
+CPP_OBJECTS = $(patsubst %.cpp, %.o, $(wildcard *.cpp))
 HEADERS = $(wildcard *.h)
 
 %.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-.PRECIOUS: $(TARGET) $(OBJECTS)
+.PRECIOUS: $(TARGET) $(OBJECTS) $(CPP_OBJECTS)
 
-$(TARGET): $(OBJECTS)
-	$(CC) $(OBJECTS) -Wall $(LIBS) -o $@
+$(TARGET): $(OBJECTS) $(CPP_OBJECTS)
+	$(CC) $(OBJECTS) $(CPP_OBJECTS) -Wall $(LIBS) -o $@
 
 clean:
 	-rm -f *.o
